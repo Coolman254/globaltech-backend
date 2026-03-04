@@ -1,0 +1,184 @@
+import Teacher from "../models/Teacher.js";
+import Student from "../models/Student.js";
+import Grade from "../models/Grade.js";
+import Assignment from "../models/Assignment.js";
+import Announcement from "../models/Announcement.js";
+
+// ── Look up Teacher by email from JWT ─────────────────────────────────────────
+const getTeacherDoc = async (req) => {
+  const email = req.user?.email;
+  if (!email) return null;
+  return Teacher.findOne({ email: email.toLowerCase() });
+};
+
+// GET /api/teacher-dashboard
+export const getTeacherDashboard = async (req, res) => {
+  try {
+    const teacher = await getTeacherDoc(req);
+    if (!teacher) {
+      return res.status(404).json({
+        success: false,
+        message: "Teacher profile not found. Ensure the User account email matches the Teacher record email exactly.",
+      });
+    }
+
+    const classList = teacher.classesAssigned
+      ? teacher.classesAssigned.split(",").map((c) => c.trim()).filter(Boolean)
+      : [];
+
+    const students = classList.length
+      ? await Student.find({ class: { $in: classList } })
+      : [];
+
+    const upcomingAssignments = classList.length
+      ? await Assignment.find({ class: { $in: classList }, dueDate: { $gte: new Date() } })
+          .sort({ dueDate: 1 }).limit(5)
+      : [];
+
+    const announcements = await Announcement.find({ isActive: true })
+      .sort({ createdAt: -1 }).limit(5);
+
+    const upcomingTasks = upcomingAssignments.map((a) => {
+      const diff = Math.ceil((new Date(a.dueDate).getTime() - Date.now()) / 86400000);
+      return {
+        _id: a._id, title: a.title, subject: a.subject, class: a.class, dueDate: a.dueDate,
+        due: diff === 0 ? "Today" : diff === 1 ? "Tomorrow" : `In ${diff} days`,
+        priority: diff <= 1 ? "high" : "medium",
+      };
+    });
+
+    const classesWithCounts = await Promise.all(
+      classList.map(async (cls) => ({
+        name: cls,
+        subject: teacher.subject,
+        students: await Student.countDocuments({ class: cls }),
+      }))
+    );
+
+    const totalAssignments = classList.length
+      ? await Assignment.countDocuments({ class: { $in: classList } })
+      : 0;
+
+    res.json({
+      success: true,
+      data: {
+        teacher: {
+          _id: teacher._id, firstName: teacher.firstName, lastName: teacher.lastName,
+          fullName: `${teacher.firstName} ${teacher.lastName}`,
+          teacherId: teacher.teacherId, subject: teacher.subject,
+          classesAssigned: classList, email: teacher.email, phone: teacher.phone,
+        },
+        stats: {
+          totalStudents: students.length, totalClasses: classList.length,
+          pendingReview: upcomingAssignments.length, totalAssignments,
+        },
+        classes: classesWithCounts,
+        upcomingTasks,
+        upcomingAssignments,
+        announcements,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// GET /api/teacher-dashboard/students
+export const getMyStudents = async (req, res) => {
+  try {
+    const teacher = await getTeacherDoc(req);
+    if (!teacher) return res.status(404).json({ success: false, message: "Teacher not found" });
+
+    const classList = teacher.classesAssigned
+      ? teacher.classesAssigned.split(",").map((c) => c.trim()).filter(Boolean)
+      : [];
+
+    const filter = { class: { $in: classList } };
+    if (req.query.class) filter.class = req.query.class;
+
+    const students = await Student.find(filter).sort({ firstName: 1 });
+    res.json({ success: true, data: students });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// GET /api/teacher-dashboard/grades
+export const getMyGrades = async (req, res) => {
+  try {
+    const teacher = await getTeacherDoc(req);
+    if (!teacher) return res.status(404).json({ success: false, message: "Teacher not found" });
+
+    const classList = teacher.classesAssigned
+      ? teacher.classesAssigned.split(",").map((c) => c.trim()).filter(Boolean)
+      : [];
+
+    const studentIds = (await Student.find({ class: { $in: classList } }).select("_id"))
+      .map((s) => s._id);
+
+    const filter = { student: { $in: studentIds } };
+    if (req.query.subject) filter.subject = req.query.subject;
+    if (req.query.term)    filter.term    = req.query.term;
+
+    const grades = await Grade.find(filter)
+      .populate("student", "firstName lastName admissionNo class")
+      .sort({ date: -1 }).limit(50);
+
+    res.json({ success: true, data: grades });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// POST /api/teacher-dashboard/grades
+export const enterGrade = async (req, res) => {
+  try {
+    const { studentId, subject, score, term, year, examType, date, remarks } = req.body;
+    if (!studentId || !subject || score === undefined || !term || !year) {
+      return res.status(400).json({
+        success: false,
+        message: "studentId, subject, score, term and year are required",
+      });
+    }
+    const grade = await Grade.create({
+      student: studentId, subject, score: Number(score), term, year, examType, date, remarks,
+    });
+    res.status(201).json({ success: true, data: grade });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// GET /api/teacher-dashboard/assignments
+export const getMyAssignments = async (req, res) => {
+  try {
+    const teacher = await getTeacherDoc(req);
+    if (!teacher) return res.status(404).json({ success: false, message: "Teacher not found" });
+
+    const classList = teacher.classesAssigned
+      ? teacher.classesAssigned.split(",").map((c) => c.trim()).filter(Boolean)
+      : [];
+
+    const assignments = await Assignment.find({ class: { $in: classList } }).sort({ dueDate: 1 });
+    res.json({ success: true, data: assignments });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// POST /api/teacher-dashboard/assignments
+export const createAssignment = async (req, res) => {
+  try {
+    const { title, subject, class: cls, dueDate, description, term, year } = req.body;
+    if (!title || !subject || !cls || !dueDate) {
+      return res.status(400).json({
+        success: false,
+        message: "title, subject, class and dueDate are required",
+      });
+    }
+    const assignment = await Assignment.create({ title, subject, class: cls, dueDate, description, term, year });
+    res.status(201).json({ success: true, data: assignment });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
