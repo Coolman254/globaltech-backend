@@ -1,8 +1,17 @@
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import Teacher from "../models/Teacher.js";
 import Student from "../models/Student.js";
 import Grade from "../models/Grade.js";
 import Assignment from "../models/Assignment.js";
 import Announcement from "../models/Announcement.js";
+import Material from "../models/Material.js";  // ← new
+
+// ── ESM-safe __dirname (needed for file paths) ────────────────────────────────
+const __filename    = fileURLToPath(import.meta.url);
+const __dirname     = path.dirname(__filename);
+const MATERIALS_DIR = path.join(__dirname, "../uploads/materials");
 
 // ── Look up Teacher by email from JWT ─────────────────────────────────────────
 const getTeacherDoc = async (req) => {
@@ -179,6 +188,111 @@ export const createAssignment = async (req, res) => {
     const assignment = await Assignment.create({ title, subject, class: cls, dueDate, description, term, year });
     res.status(201).json({ success: true, data: assignment });
   } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MATERIALS  (new)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// POST /api/teacher-dashboard/materials
+export const uploadMaterial = async (req, res) => {
+  try {
+    const { title, subject, description } = req.body;
+    const className = req.body.class;
+
+    if (!title?.trim()) {
+      if (req.file) fs.unlink(req.file.path, () => {});
+      return res.status(400).json({ success: false, message: "Title is required" });
+    }
+    if (!className?.trim()) {
+      if (req.file) fs.unlink(req.file.path, () => {});
+      return res.status(400).json({ success: false, message: "Class is required" });
+    }
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: "File is required" });
+    }
+
+    // Use getTeacherDoc so uploadedBy is the Teacher _id (consistent with the rest of this controller)
+    const teacher = await getTeacherDoc(req);
+    if (!teacher) {
+      fs.unlink(req.file.path, () => {});
+      return res.status(404).json({ success: false, message: "Teacher profile not found" });
+    }
+
+    const material = await Material.create({
+      title:          title.trim(),
+      subject:        subject?.trim() || teacher.subject,
+      class:          className.trim(),
+      description:    description?.trim() ?? "",
+      uploadedBy:     teacher._id,
+      fileName:       req.file.originalname,
+      storedFileName: req.file.filename,
+      fileType:       req.file.mimetype,
+      fileSize:       req.file.size,
+      fileUrl:        "",
+    });
+
+    res.status(201).json({
+      success: true,
+      message: "Material uploaded successfully",
+      material: {
+        _id:       material._id,
+        title:     material.title,
+        subject:   material.subject,
+        class:     material.class,
+        fileType:  material.fileType,
+        fileSize:  material.fileSize,
+        createdAt: material.createdAt,
+      },
+    });
+  } catch (err) {
+    if (req.file) fs.unlink(req.file.path, () => {});
+    console.error("uploadMaterial:", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// GET /api/teacher-dashboard/materials
+export const getMyMaterials = async (req, res) => {
+  try {
+    const teacher = await getTeacherDoc(req);
+    if (!teacher) return res.status(404).json({ success: false, message: "Teacher not found" });
+
+    const materials = await Material.find({ uploadedBy: teacher._id })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.json({ success: true, data: materials });
+  } catch (err) {
+    console.error("getMyMaterials:", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// DELETE /api/teacher-dashboard/materials/:id
+export const deleteMaterial = async (req, res) => {
+  try {
+    const teacher = await getTeacherDoc(req);
+    if (!teacher) return res.status(404).json({ success: false, message: "Teacher not found" });
+
+    const material = await Material.findOne({
+      _id:        req.params.id,
+      uploadedBy: teacher._id,   // ensures teacher can only delete their own uploads
+    });
+
+    if (!material) {
+      return res.status(404).json({ success: false, message: "Material not found" });
+    }
+
+    const filePath = path.join(MATERIALS_DIR, material.storedFileName);
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+
+    await material.deleteOne();
+    res.json({ success: true, message: "Material deleted successfully" });
+  } catch (err) {
+    console.error("deleteMaterial:", err);
     res.status(500).json({ success: false, message: err.message });
   }
 };

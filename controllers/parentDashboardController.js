@@ -3,6 +3,7 @@ import Student from "../models/Student.js";
 import Grade from "../models/Grade.js";
 import Announcement from "../models/Announcement.js";
 import { Payment, FeeStructure } from "../models/Finance.js";
+import Message from "../models/Message.js";   // ← new model (save Message.js — see below)
 
 // ── Look up Parent by email from JWT ─────────────────────────────────────────
 const getParentDoc = async (req) => {
@@ -11,17 +12,19 @@ const getParentDoc = async (req) => {
   return Parent.findOne({ email: email.toLowerCase() });
 };
 
+// ── Security helper: confirm child belongs to this parent ─────────────────────
+const isLinkedChild = (parent, childId) =>
+  parent.linkedStudents.some((id) => id.toString() === childId.toString());
+
 // ── Fee helper: compute totals from FeeStructure + Payment records ────────────
 const getStudentFeeInfo = async (student) => {
   const currentYear = String(new Date().getFullYear());
   const structures  = await FeeStructure.find({ class: student.class, year: currentYear }).lean();
 
-  // Sum all terms' fee structures for this class
   const totalFees = structures.reduce((sum, s) => {
     return sum + (s.tuition ?? 0) + (s.boarding ?? 0) + (s.activity ?? 0) + (s.other ?? 0);
   }, 0);
 
-  // Sum all payments made by this student
   const payments   = await Payment.find({ student: student._id }).lean();
   const amountPaid = payments.reduce((sum, p) => sum + (p.amount ?? 0), 0);
 
@@ -35,7 +38,9 @@ const getStudentFeeInfo = async (student) => {
   return { totalFees, amountPaid, balance, feeStatus };
 };
 
-// GET /api/parent-dashboard
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/parent-dashboard                               (existing — unchanged)
+// ─────────────────────────────────────────────────────────────────────────────
 export const getParentDashboard = async (req, res) => {
   try {
     const parent = await getParentDoc(req);
@@ -104,7 +109,9 @@ export const getParentDashboard = async (req, res) => {
   }
 };
 
-// GET /api/parent-dashboard/child/:childId/finance
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/parent-dashboard/child/:childId/finance        (existing — unchanged)
+// ─────────────────────────────────────────────────────────────────────────────
 export const getChildFinance = async (req, res) => {
   try {
     const parent = await getParentDoc(req);
@@ -112,8 +119,7 @@ export const getChildFinance = async (req, res) => {
 
     const { childId } = req.params;
 
-    const isLinked = parent.linkedStudents.some(id => id.toString() === childId);
-    if (!isLinked) {
+    if (!isLinkedChild(parent, childId)) {
       return res.status(403).json({ success: false, message: "Access denied: child not linked to your account" });
     }
 
@@ -148,7 +154,9 @@ export const getChildFinance = async (req, res) => {
   }
 };
 
-// GET /api/parent-dashboard/child/:childId/grades
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/parent-dashboard/child/:childId/grades         (existing — unchanged)
+// ─────────────────────────────────────────────────────────────────────────────
 export const getChildGrades = async (req, res) => {
   try {
     const parent = await getParentDoc(req);
@@ -156,14 +164,147 @@ export const getChildGrades = async (req, res) => {
 
     const { childId } = req.params;
 
-    const isLinked = parent.linkedStudents.some(id => id.toString() === childId);
-    if (!isLinked) {
+    if (!isLinkedChild(parent, childId)) {
       return res.status(403).json({ success: false, message: "Access denied" });
     }
 
     const grades = await Grade.find({ student: childId }).sort({ date: -1 }).limit(30).lean();
     res.json({ success: true, data: grades });
   } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/parent-dashboard/child/:childId/report-card    (new)
+// All grades grouped by term for the Report Card dialog
+// ─────────────────────────────────────────────────────────────────────────────
+export const getReportCard = async (req, res) => {
+  try {
+    const parent = await getParentDoc(req);
+    if (!parent) return res.status(404).json({ success: false, message: "Parent not found" });
+
+    const { childId } = req.params;
+
+    if (!isLinkedChild(parent, childId)) {
+      return res.status(403).json({ success: false, message: "Access denied" });
+    }
+
+    const grades = await Grade.find({ student: childId }).sort({ date: -1 }).lean();
+
+    // Group by "Term Year"  e.g. "Term 1 2025"
+    const byTerm = grades.reduce((acc, g) => {
+      const key = `${g.term} ${g.year ?? ""}`.trim();
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(g);
+      return acc;
+    }, {});
+
+    res.json({ success: true, data: byTerm });
+  } catch (err) {
+    console.error("getReportCard:", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/parent-dashboard/child/:childId/attendance     (new)
+// Attendance summary + recent records for the Attendance dialog
+// ─────────────────────────────────────────────────────────────────────────────
+export const getAttendance = async (req, res) => {
+  try {
+    const parent = await getParentDoc(req);
+    if (!parent) return res.status(404).json({ success: false, message: "Parent not found" });
+
+    const { childId } = req.params;
+
+    if (!isLinkedChild(parent, childId)) {
+      return res.status(403).json({ success: false, message: "Access denied" });
+    }
+
+    let records = [];
+    try {
+      const Attendance = (await import("../models/Attendance.js")).default;
+      records = await Attendance.find({ student: childId })
+        .sort({ date: -1 })
+        .limit(60)
+        .lean();
+    } catch {
+      // Attendance model not set up yet — returns empty summary gracefully
+    }
+
+    const totalDays   = records.length;
+    const presentDays = records.filter((r) => r.status === "present").length;
+    const absentDays  = records.filter((r) => r.status === "absent").length;
+    const lateDays    = records.filter((r) => r.status === "late").length;
+    const percentage  = totalDays ? Math.round((presentDays / totalDays) * 100) : 0;
+
+    res.json({
+      success: true,
+      data: {
+        summary: { totalDays, presentDays, absentDays, lateDays, percentage },
+        records,
+      },
+    });
+  } catch (err) {
+    console.error("getAttendance:", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/parent-dashboard/messages                      (new)
+// ─────────────────────────────────────────────────────────────────────────────
+export const getMessages = async (req, res) => {
+  try {
+    const parent = await getParentDoc(req);
+    if (!parent) return res.status(404).json({ success: false, message: "Parent not found" });
+
+    const messages = await Message.find({ parent: parent._id })
+      .populate("teacher", "firstName lastName subject")
+      .populate("student", "firstName lastName")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.json({ success: true, data: messages });
+  } catch (err) {
+    console.error("getMessages:", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/parent-dashboard/messages                     (new)
+// Body: { teacherId, studentId, body }
+// ─────────────────────────────────────────────────────────────────────────────
+export const sendMessage = async (req, res) => {
+  try {
+    const parent = await getParentDoc(req);
+    if (!parent) return res.status(404).json({ success: false, message: "Parent not found" });
+
+    const { teacherId, studentId, body } = req.body;
+
+    if (!body?.trim()) {
+      return res.status(400).json({ success: false, message: "Message body is required" });
+    }
+    if (!teacherId) {
+      return res.status(400).json({ success: false, message: "Please select a teacher" });
+    }
+    if (!isLinkedChild(parent, studentId)) {
+      return res.status(403).json({ success: false, message: "Access denied" });
+    }
+
+    const message = await Message.create({
+      parent:  parent._id,
+      teacher: teacherId,
+      student: studentId,
+      body:    body.trim(),
+      sentBy:  "parent",
+    });
+
+    res.status(201).json({ success: true, data: message });
+  } catch (err) {
+    console.error("sendMessage:", err);
     res.status(500).json({ success: false, message: err.message });
   }
 };
