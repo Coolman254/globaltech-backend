@@ -7,10 +7,11 @@ export const createTeacher = async (req, res) => {
     const {
       firstName, lastName, gender, age, email, phone,
       teacherId, subject, salaryKsh, employmentType, classesAssigned,
+      password,
     } = req.body;
 
-    if (!firstName || !lastName || !gender || !age || !email || !teacherId || !subject || !salaryKsh) {
-      return res.status(400).json({ message: "Please fill in all required fields including email." });
+    if (!firstName || !lastName || !gender || !age || !email || !teacherId || !subject || !salaryKsh || !password) {
+      return res.status(400).json({ message: "Please fill in all required fields including email and password." });
     }
 
     // Check duplicate teacherId
@@ -19,20 +20,38 @@ export const createTeacher = async (req, res) => {
       return res.status(409).json({ message: "A teacher with this employee number already exists." });
     }
 
-    // Check duplicate email
+    // Check duplicate email in Teacher collection
     const existingByEmail = await Teacher.findOne({ email: email.toLowerCase() });
     if (existingByEmail) {
       return res.status(409).json({ message: "A teacher with this email already exists." });
     }
 
+    // Check duplicate email in User collection
+    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    if (existingUser) {
+      return res.status(409).json({ message: "A login account with this email already exists." });
+    }
+
+    // Create login account (password hashed automatically via User pre-save hook)
+    await User.create({
+      name: `${firstName} ${lastName}`,
+      email: email.toLowerCase(),
+      password,
+      role: "teacher",
+    });
+
+    // Create teacher profile
     const teacher = await Teacher.create({
-      firstName, lastName, gender, age,
-      email,
-      phone:           phone           || null,
+      firstName,
+      lastName,
+      gender,
+      age,
+      email: email.toLowerCase(),
+      phone: phone || null,
       teacherId,
       subject,
       salaryKsh,
-      employmentType:  employmentType  || "fulltime",
+      employmentType: employmentType || "fulltime",
       classesAssigned: classesAssigned || null,
     });
 
@@ -81,7 +100,7 @@ export const updateTeacher = async (req, res) => {
     }
 
     const teacher = await Teacher.findByIdAndUpdate(req.params.id, req.body, {
-      new:           true,
+      new: true,
       runValidators: true,
     });
     if (!teacher) return res.status(404).json({ message: "Teacher not found." });
