@@ -6,7 +6,7 @@ import Student from "../models/Student.js";
 import Grade from "../models/Grade.js";
 import Assignment from "../models/Assignment.js";
 import Announcement from "../models/Announcement.js";
-import Material from "../models/Material.js";  // ← new
+import Material from "../models/Material.js";
 
 // ── ESM-safe __dirname (needed for file paths) ────────────────────────────────
 const __filename    = fileURLToPath(import.meta.url);
@@ -158,6 +158,57 @@ export const enterGrade = async (req, res) => {
   }
 };
 
+// ✅ POST /api/teacher-dashboard/grades/by-admission
+// Enter a grade using the student's admission number instead of MongoDB _id
+export const enterGradeByAdmission = async (req, res) => {
+  try {
+    const { admissionNo, subject, score, term, year, examType, date, remarks } = req.body;
+
+    if (!admissionNo || !subject || score === undefined || !term || !year) {
+      return res.status(400).json({
+        success: false,
+        message: "admissionNo, subject, score, term and year are required",
+      });
+    }
+
+    // Look up student by admission number (case-insensitive)
+    const student = await Student.findOne({
+      admissionNo: admissionNo.trim().toUpperCase(),
+    });
+
+    if (!student) {
+      return res.status(404).json({
+        success: false,
+        message: `No student found with admission number "${admissionNo}"`,
+      });
+    }
+
+    const grade = await Grade.create({
+      student:  student._id,
+      subject,
+      score:    Number(score),
+      term,
+      year,
+      examType: examType || "End Term",
+      date,
+      remarks,
+    });
+
+    // Return grade with student info so frontend can confirm who was graded
+    res.status(201).json({
+      success: true,
+      data: {
+        ...grade.toObject(),
+        studentName: `${student.firstName} ${student.lastName}`,
+        admissionNo: student.admissionNo,
+        class:       student.class,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 // GET /api/teacher-dashboard/assignments
 export const getMyAssignments = async (req, res) => {
   try {
@@ -193,7 +244,7 @@ export const createAssignment = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MATERIALS  (new)
+// MATERIALS
 // ─────────────────────────────────────────────────────────────────────────────
 
 // POST /api/teacher-dashboard/materials
@@ -214,7 +265,6 @@ export const uploadMaterial = async (req, res) => {
       return res.status(400).json({ success: false, message: "File is required" });
     }
 
-    // Use getTeacherDoc so uploadedBy is the Teacher _id (consistent with the rest of this controller)
     const teacher = await getTeacherDoc(req);
     if (!teacher) {
       fs.unlink(req.file.path, () => {});
@@ -279,7 +329,7 @@ export const deleteMaterial = async (req, res) => {
 
     const material = await Material.findOne({
       _id:        req.params.id,
-      uploadedBy: teacher._id,   // ensures teacher can only delete their own uploads
+      uploadedBy: teacher._id,
     });
 
     if (!material) {

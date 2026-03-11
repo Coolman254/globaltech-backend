@@ -6,7 +6,6 @@ const parentSchema = new mongoose.Schema(
     lastName:     { type: String, required: true, trim: true },
     gender:       { type: String, enum: ["Male", "Female", "Other"], required: true },
     age:          { type: Number, required: true },
-    // email required + unique so dashboard can look up parent from JWT email
     email:        { type: String, required: true, unique: true, lowercase: true, trim: true },
     phone:        { type: String, default: null },
     nationalId:   { type: Number, required: true, unique: true },
@@ -26,6 +25,7 @@ const parentSchema = new mongoose.Schema(
 parentSchema.virtual("fullName").get(function () {
   return `${this.firstName} ${this.lastName}`;
 });
+
 parentSchema.set("toJSON",   { virtuals: true });
 parentSchema.set("toObject", { virtuals: true });
 

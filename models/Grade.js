@@ -5,10 +5,10 @@ const gradeSchema = new mongoose.Schema(
     student:  { type: mongoose.Schema.Types.ObjectId, ref: "Student", required: true },
     subject:  { type: String, required: true, trim: true },
     score:    { type: Number, required: true, min: 0, max: 100 },
-    grade:    { type: String, trim: true },   // e.g. "A", "B+"
+    grade:    { type: String, trim: true },
     term:     { type: String, required: true, enum: ["Term 1", "Term 2", "Term 3"] },
     year:     { type: String, required: true },
-    examType: { type: String, default: "End Term", trim: true },  // CAT, Mid-term, End Term
+    examType: { type: String, default: "End Term", trim: true },
     date:     { type: Date, default: Date.now },
     remarks:  { type: String, trim: true },
   },

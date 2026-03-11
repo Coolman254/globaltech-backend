@@ -8,9 +8,9 @@ import {
   getMyStudents,
   getMyGrades,
   enterGrade,
+  enterGradeByAdmission, // ✅ added
   getMyAssignments,
   createAssignment,
-  // ── new material controllers ──
   uploadMaterial,
   getMyMaterials,
   deleteMaterial,
@@ -19,18 +19,18 @@ import { protect, restrictTo } from "../middleware/authMiddleware.js";
 
 // ── ESM-safe __dirname ────────────────────────────────────────────────────────
 const __filename = fileURLToPath(import.meta.url);
-const __dirname  = path.dirname(__filename);
+const __dirname  = path.dirname(__filename); // ✅ fixed __path__
 
 // ── Upload directory ──────────────────────────────────────────────────────────
-const MATERIALS_DIR = path.join(__dirname, "../uploads/materials");
-if (!fs.existsSync(MATERIALS_DIR)) fs.mkdirSync(MATERIALS_DIR, { recursive: true });
+const MATERIALS_DIR = path.join(__dirname, "../uploads/materials"); // ✅ fixed __path__
+if (!fs.existsSync(MATERIALS_DIR)) fs.mkdirSync(MATERIALS_DIR, { recursive: true }); // ✅ fixed __fs__
 
 // ── Multer config ─────────────────────────────────────────────────────────────
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, MATERIALS_DIR),
   filename:    (_req, file, cb) => {
     const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-    cb(null, `${unique}${path.extname(file.originalname)}`);
+    cb(null, `${unique}${path.extname(file.originalname)}`); // ✅ fixed __path__
   },
 });
 
@@ -59,15 +59,16 @@ const router = express.Router();
 router.use(protect);
 router.use(restrictTo("admin", "teacher"));
 
-// ── Existing routes (unchanged) ───────────────────────────────────────────────
+// ── Routes ────────────────────────────────────────────────────────────────────
 router.get("/",             getTeacherDashboard);
 router.get("/students",     getMyStudents);
 router.get("/grades",       getMyGrades);
 router.post("/grades",      enterGrade);
+router.post("/grades/by-admission", enterGradeByAdmission); // ✅ added
 router.get("/assignments",  getMyAssignments);
 router.post("/assignments", createAssignment);
 
-// ── New: materials ────────────────────────────────────────────────────────────
+// ── Materials ─────────────────────────────────────────────────────────────────
 router.post("/materials",        upload.single("file"), uploadMaterial);
 router.get("/materials",         getMyMaterials);
 router.delete("/materials/:id",  deleteMaterial);
