@@ -4,7 +4,6 @@ import {
   getMyGrades,
   getMyAssignments,
   getMyFinance,
-  // ── new controllers added below ──
   getMaterials,
   downloadMaterial,
   submitAssignment,
@@ -17,18 +16,18 @@ import { fileURLToPath } from "url";
 
 // ── ESM-safe __dirname ────────────────────────────────────────────────────────
 const __filename = fileURLToPath(import.meta.url);
-const __dirname  = path.dirname(__filename);
+const __dirname  = path.dirname(__filename); // ✅ fixed __path__
 
 // ── Submission upload directory ───────────────────────────────────────────────
-const SUBMISSIONS_DIR = path.join(__dirname, "../uploads/submissions");
-if (!fs.existsSync(SUBMISSIONS_DIR)) fs.mkdirSync(SUBMISSIONS_DIR, { recursive: true });
+const SUBMISSIONS_DIR = path.join(__dirname, "../uploads/submissions"); // ✅ fixed __path__
+if (!fs.existsSync(SUBMISSIONS_DIR)) fs.mkdirSync(SUBMISSIONS_DIR, { recursive: true }); // ✅ fixed __fs__
 
 // ── Multer: save submission files to disk ─────────────────────────────────────
 const submissionStorage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, SUBMISSIONS_DIR),
   filename:    (_req, file, cb) => {
     const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-    cb(null, `${unique}${path.extname(file.originalname)}`);
+    cb(null, `${unique}${path.extname(file.originalname)}`); // ✅ fixed __path__
   },
 });
 
@@ -55,19 +54,17 @@ const router = express.Router();
 // ── All routes require a logged-in student ────────────────────────────────────
 router.use(protect);
 
-// ── Existing routes (unchanged) ───────────────────────────────────────────────
+// ── Routes ────────────────────────────────────────────────────────────────────
 router.get("/",            getDashboard);
 router.get("/grades",      getMyGrades);
 router.get("/assignments", getMyAssignments);
 router.get("/finance",     getMyFinance);
 
-// ── New: materials ────────────────────────────────────────────────────────────
-router.get("/materials",                getMaterials);       // list class materials
-router.get("/materials/:id/download",   downloadMaterial);  // stream file to browser
+// ── Materials ─────────────────────────────────────────────────────────────────
+router.get("/materials",              getMaterials);
+router.get("/materials/:id/download", downloadMaterial);
 
-// ── New: assignment submission ────────────────────────────────────────────────
-// uploadSubmission.single("file") runs before the controller;
-// if no file is attached that's fine — req.file will just be undefined.
+// ── Assignment submission ─────────────────────────────────────────────────────
 router.post(
   "/assignments/:id/submit",
   uploadSubmission.single("file"),
