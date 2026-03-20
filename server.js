@@ -16,56 +16,55 @@ import studentDashboardRoutes from "./routes/studentDashboardRoutes.js";
 import adminDashboardRoutes from "./routes/adminDashboardRoutes.js";
 import teacherDashboardRoutes from "./routes/teacherDashboardRoutes.js";
 import parentDashboardRoutes from "./routes/parentDashboardRoutes.js";
-import studentFinanceRoutes from  "./routes/studentFinanceRoutes.js";
-
-
+import studentFinanceRoutes from "./routes/studentFinanceRoutes.js";
 
 dotenv.config();
 
+// ── ESM-safe __dirname ────────────────────────────────────────────────────────
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname  = path.dirname(__filename); // ✅ was __path__.dirname
+
 const PORT = process.env.PORT || 5000;
+const app  = express();
 
-const app = express();
-
+// ── Middleware ────────────────────────────────────────────────────────────────
 app.use(cors({
-  origin: [process.env.CLIENT_URL, 
-    "http://localhost:8080", 
-    "http://localhost:5173", 
-    "https://frolicking-sherbet-aee998.netlify.app"],
+  origin: [
+    process.env.CLIENT_URL,
+    "http://localhost:8080",
+    "http://localhost:5173",
+    "https://frolicking-sherbet-aee998.netlify.app",
+  ],
   credentials: true,
 }));
-
 app.use(express.json());
 
-// Serve uploaded files statically
+// ── Static uploads ────────────────────────────────────────────────────────────
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-// Routes
-app.get("/", (req, res) => {
-  res.json({ message: "API is running ✅" });
-});
-app.use("/api/auth", authRoutes);
-app.use("/api/students", studentRoutes);
-app.use("/api/parents", parentRoutes);
-app.use("/api/teachers", teacherRoutes);
-app.use("/api/classes", classesRouter);
-app.use("/api/content", contentRouter);  // ← fixed (was /api/contentRouter)
-app.use("/api/finance", financeRoutes);
-app.use("/api/student-auth",  studentAuthRoutes);
-app.use("/api/student-dashboard",   studentDashboardRoutes);
-app.use("/api/admin-dashboard",   adminDashboardRoutes);
-app.use("/api/teacher-dashboard",   teacherDashboardRoutes);
-app.use("/api/parent-dashboard",  parentDashboardRoutes);
-app.use("/api/student-finance",  studentFinanceRoutes);
+// ── Health check ──────────────────────────────────────────────────────────────
+app.get("/", (_req, res) => res.json({ message: "API is running ✅" }));
 
+// ── Routes ────────────────────────────────────────────────────────────────────
+app.use("/api/auth",               authRoutes);
+app.use("/api/students",           studentRoutes);
+app.use("/api/parents",            parentRoutes);
+app.use("/api/teachers",           teacherRoutes);
+app.use("/api/classes",            classesRouter);
+app.use("/api/content",            contentRouter);
+app.use("/api/finance",            financeRoutes);
+app.use("/api/student-auth",       studentAuthRoutes);
+app.use("/api/student-dashboard",  studentDashboardRoutes);
+app.use("/api/admin-dashboard",    adminDashboardRoutes);
+app.use("/api/teacher-dashboard",  teacherDashboardRoutes);
+app.use("/api/parent-dashboard",   parentDashboardRoutes);
+app.use("/api/student-finance",    studentFinanceRoutes);
 
+// ── Database + server start ───────────────────────────────────────────────────
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => {
     console.log("MongoDB connected");
-    app.listen(process.env.PORT || 5000, () =>
-      console.log(`Server running on port ${PORT}`)
-    );
+    app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
   })
-  .catch((err) => console.error("DB connection error:", err));
+  .catch(err => console.error("DB connection error:", err));

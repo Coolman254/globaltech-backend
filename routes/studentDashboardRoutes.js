@@ -1,4 +1,8 @@
 import express from "express";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
+import { fileURLToPath } from "url";
 import {
   getDashboard,
   getMyGrades,
@@ -9,25 +13,21 @@ import {
   submitAssignment,
 } from "../controllers/studentDashboardController.js";
 import { protect } from "../middleware/authMiddleware.js";
-import multer from "multer";
-import path from "path";
-import fs from "fs";
-import { fileURLToPath } from "url";
 
 // ── ESM-safe __dirname ────────────────────────────────────────────────────────
 const __filename = fileURLToPath(import.meta.url);
-const __dirname  = path.dirname(__filename); // ✅ fixed __path__
+const __dirname  = path.dirname(__filename); // ✅ was __path__.dirname
 
 // ── Submission upload directory ───────────────────────────────────────────────
-const SUBMISSIONS_DIR = path.join(__dirname, "../uploads/submissions"); // ✅ fixed __path__
-if (!fs.existsSync(SUBMISSIONS_DIR)) fs.mkdirSync(SUBMISSIONS_DIR, { recursive: true }); // ✅ fixed __fs__
+const SUBMISSIONS_DIR = path.join(__dirname, "../uploads/submissions"); // ✅ was __path__.join
+if (!fs.existsSync(SUBMISSIONS_DIR)) fs.mkdirSync(SUBMISSIONS_DIR, { recursive: true }); // ✅ was __fs__
 
 // ── Multer: save submission files to disk ─────────────────────────────────────
 const submissionStorage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, SUBMISSIONS_DIR),
   filename:    (_req, file, cb) => {
     const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-    cb(null, `${unique}${path.extname(file.originalname)}`); // ✅ fixed __path__
+    cb(null, `${unique}${path.extname(file.originalname)}`); // ✅ was __path__.extname
   },
 });
 

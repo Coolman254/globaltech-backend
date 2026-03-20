@@ -9,14 +9,16 @@ const gradeSchema = new mongoose.Schema(
     term:     { type: String, required: true, enum: ["Term 1", "Term 2", "Term 3"] },
     year:     { type: String, required: true },
     examType: { type: String, default: "End Term", trim: true },
-    date:     { type: Date, default: Date.now },
+    date:     { type: Date,   default: Date.now },
     remarks:  { type: String, trim: true },
   },
   { timestamps: true }
 );
 
-// Auto-derive letter grade from score before saving
-gradeSchema.pre("save", function (next) {
+// ── Auto-derive letter grade from score ───────────────────────────────────────
+// Use "validate" instead of "save" so it works with both
+// Grade.create() and new Grade().save()
+gradeSchema.pre("validate", function (next) {
   if (!this.grade) {
     const s = this.score;
     if      (s >= 90) this.grade = "A";
@@ -34,4 +36,4 @@ gradeSchema.pre("save", function (next) {
   next();
 });
 
-export default mongoose.model("Grade", gradeSchema);
+export default mongoose.models.Grade || mongoose.model("Grade", gradeSchema);

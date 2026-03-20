@@ -6,7 +6,7 @@ const router = express.Router();
 
 router.use(protect);
 
-router.get("/", restrictTo("admin", "teacher"), getTeachers);
+router.get("/", restrictTo("admin", "teacher","parent"), getTeachers);
 router.get("/:id", restrictTo("admin", "teacher"), getTeacherById);
 router.post("/", restrictTo("admin"), createTeacher);
 router.put("/:id", restrictTo("admin"), updateTeacher);

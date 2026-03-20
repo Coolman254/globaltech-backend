@@ -3,7 +3,7 @@ import Student from "../models/Student.js";
 import Grade from "../models/Grade.js";
 import Announcement from "../models/Announcement.js";
 import { Payment, FeeStructure } from "../models/Finance.js";
-import Message from "../models/Message.js";   // ← new model (save Message.js — see below)
+import Message from "../models/Message.js";
 
 // ── Look up Parent by email from JWT ─────────────────────────────────────────
 const getParentDoc = async (req) => {
@@ -38,9 +38,7 @@ const getStudentFeeInfo = async (student) => {
   return { totalFees, amountPaid, balance, feeStatus };
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/parent-dashboard                               (existing — unchanged)
-// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/parent-dashboard
 export const getParentDashboard = async (req, res) => {
   try {
     const parent = await getParentDoc(req);
@@ -58,9 +56,7 @@ export const getParentDashboard = async (req, res) => {
     const childrenWithData = await Promise.all(
       children.map(async (child) => {
         const recentGrades = await Grade.find({ student: child._id })
-          .sort({ date: -1 })
-          .limit(5)
-          .lean();
+          .sort({ date: -1 }).limit(5).lean();
 
         const avgScore = recentGrades.length
           ? Math.round(recentGrades.reduce((s, g) => s + g.score, 0) / recentGrades.length)
@@ -109,9 +105,7 @@ export const getParentDashboard = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/parent-dashboard/child/:childId/finance        (existing — unchanged)
-// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/parent-dashboard/child/:childId/finance
 export const getChildFinance = async (req, res) => {
   try {
     const parent = await getParentDoc(req);
@@ -154,9 +148,7 @@ export const getChildFinance = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/parent-dashboard/child/:childId/grades         (existing — unchanged)
-// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/parent-dashboard/child/:childId/grades
 export const getChildGrades = async (req, res) => {
   try {
     const parent = await getParentDoc(req);
@@ -175,10 +167,7 @@ export const getChildGrades = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/parent-dashboard/child/:childId/report-card    (new)
-// All grades grouped by term for the Report Card dialog
-// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/parent-dashboard/child/:childId/report-card
 export const getReportCard = async (req, res) => {
   try {
     const parent = await getParentDoc(req);
@@ -192,7 +181,6 @@ export const getReportCard = async (req, res) => {
 
     const grades = await Grade.find({ student: childId }).sort({ date: -1 }).lean();
 
-    // Group by "Term Year"  e.g. "Term 1 2025"
     const byTerm = grades.reduce((acc, g) => {
       const key = `${g.term} ${g.year ?? ""}`.trim();
       if (!acc[key]) acc[key] = [];
@@ -207,10 +195,7 @@ export const getReportCard = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/parent-dashboard/child/:childId/attendance     (new)
-// Attendance summary + recent records for the Attendance dialog
-// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/parent-dashboard/child/:childId/attendance
 export const getAttendance = async (req, res) => {
   try {
     const parent = await getParentDoc(req);
@@ -226,9 +211,7 @@ export const getAttendance = async (req, res) => {
     try {
       const Attendance = (await import("../models/Attendance.js")).default;
       records = await Attendance.find({ student: childId })
-        .sort({ date: -1 })
-        .limit(60)
-        .lean();
+        .sort({ date: -1 }).limit(60).lean();
     } catch {
       // Attendance model not set up yet — returns empty summary gracefully
     }
@@ -252,9 +235,7 @@ export const getAttendance = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/parent-dashboard/messages                      (new)
-// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/parent-dashboard/messages
 export const getMessages = async (req, res) => {
   try {
     const parent = await getParentDoc(req);
@@ -273,10 +254,7 @@ export const getMessages = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// POST /api/parent-dashboard/messages                     (new)
-// Body: { teacherId, studentId, body }
-// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/parent-dashboard/messages
 export const sendMessage = async (req, res) => {
   try {
     const parent = await getParentDoc(req);
@@ -305,6 +283,74 @@ export const sendMessage = async (req, res) => {
     res.status(201).json({ success: true, data: message });
   } catch (err) {
     console.error("sendMessage:", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// POST /api/parent-dashboard/child/:childId/payment
+export const makePayment = async (req, res) => {
+  try {
+    const parent = await getParentDoc(req);
+    if (!parent) return res.status(404).json({ success: false, message: "Parent not found" });
+
+    const { childId } = req.params;
+
+    if (!isLinkedChild(parent, childId)) {
+      return res.status(403).json({ success: false, message: "Access denied: child not linked to your account" });
+    }
+
+    const child = await Student.findById(childId).lean();
+    if (!child) return res.status(404).json({ success: false, message: "Student not found" });
+
+    const { amount, method, reference, notes } = req.body;
+
+    if (!amount || Number(amount) <= 0) {
+      return res.status(400).json({ success: false, message: "Amount must be greater than 0" });
+    }
+    if (!method) {
+      return res.status(400).json({ success: false, message: "Payment method is required" });
+    }
+    if (!reference?.trim()) {
+      return res.status(400).json({ success: false, message: "Reference number is required" });
+    }
+
+    // Prevent duplicate reference for same student
+    const duplicate = await Payment.findOne({
+      student:   child._id,
+      reference: reference.trim(),
+    });
+    if (duplicate) {
+      return res.status(409).json({
+        success: false,
+        message: `A payment with reference "${reference}" already exists for this student`,
+      });
+    }
+
+    const payment = await Payment.create({
+      student:     child._id,
+      studentName: `${child.firstName} ${child.lastName}`,
+      admNo:       child.admissionNo,
+      amount:      Number(amount),
+      method,
+      reference:   reference.trim(),
+      notes:       notes?.trim() ?? "",
+      date:        new Date(),
+    });
+
+    res.status(201).json({
+      success: true,
+      message: "Payment recorded successfully",
+      data: {
+        _id:       payment._id,
+        amount:    payment.amount,
+        method:    payment.method,
+        reference: payment.reference,
+        receipt:   payment.receipt,
+        date:      payment.date,
+      },
+    });
+  } catch (err) {
+    console.error("makePayment:", err);
     res.status(500).json({ success: false, message: err.message });
   }
 };
