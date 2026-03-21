@@ -1,25 +1,33 @@
-import Message from "../models/Message.js";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import Teacher from "../models/Teacher.js";
-import Student from "../models/Student.js";
-import Grade from "../models/Grade.js";
+import Teacher    from "../models/Teacher.js";
+import Student    from "../models/Student.js";
+import Grade, { letterGrade } from "../models/Grade.js"; // ✅ import letterGrade
 import Assignment from "../models/Assignment.js";
 import Submission from "../models/Submission.js";
 import Announcement from "../models/Announcement.js";
-import Material from "../models/Material.js";
+import Material   from "../models/Material.js";
+import Message    from "../models/Message.js";
 
-// ── ESM-safe __dirname (needed for file paths) ────────────────────────────────
 const __filename    = fileURLToPath(import.meta.url);
 const __dirname     = path.dirname(__filename);
 const MATERIALS_DIR = path.join(__dirname, "../uploads/materials");
 
-// ── Look up Teacher by email from JWT ─────────────────────────────────────────
+// ── Look up Teacher doc from JWT ──────────────────────────────────────────────
 const getTeacherDoc = async (req) => {
-  const email = req.user?.email;
-  if (!email) return null;
-  return Teacher.findOne({ email: email.toLowerCase() });
+  const userId = req.user?.id ?? req.user?._id;
+  if (!userId) return null;
+
+  let teacher = await Teacher.findOne({ userId }).lean(false);
+  if (teacher) return teacher;
+
+  const User_ = (await import("../models/User.js")).default;
+  const userDoc = await User_.findById(userId).select("email").lean();
+  if (!userDoc?.email) return null;
+
+  teacher = await Teacher.findOne({ email: userDoc.email.toLowerCase() }).lean(false);
+  return teacher ?? null;
 };
 
 // GET /api/teacher-dashboard
@@ -34,34 +42,31 @@ export const getTeacherDashboard = async (req, res) => {
     }
 
     const classList = teacher.classesAssigned
-      ? teacher.classesAssigned.split(",").map((c) => c.trim()).filter(Boolean)
+      ? teacher.classesAssigned.split(",").map(c => c.trim()).filter(Boolean)
       : [];
 
-    const students = classList.length
-      ? await Student.find({ class: { $in: classList } })
-      : [];
+    const [students, upcomingAssignments, announcements] = await Promise.all([
+      classList.length ? Student.find({ class: { $in: classList } }) : [],
+      classList.length
+        ? Assignment.find({ class: { $in: classList }, dueDate: { $gte: new Date() } })
+            .sort({ dueDate: 1 }).limit(5)
+        : [],
+      Announcement.find({ isActive: true }).sort({ createdAt: -1 }).limit(5),
+    ]);
 
-    const upcomingAssignments = classList.length
-      ? await Assignment.find({ class: { $in: classList }, dueDate: { $gte: new Date() } })
-          .sort({ dueDate: 1 }).limit(5)
-      : [];
-
-    const announcements = await Announcement.find({ isActive: true })
-      .sort({ createdAt: -1 }).limit(5);
-
-    const upcomingTasks = upcomingAssignments.map((a) => {
+    const upcomingTasks = upcomingAssignments.map(a => {
       const diff = Math.ceil((new Date(a.dueDate).getTime() - Date.now()) / 86400000);
       return {
         _id: a._id, title: a.title, subject: a.subject, class: a.class, dueDate: a.dueDate,
-        due: diff === 0 ? "Today" : diff === 1 ? "Tomorrow" : `In ${diff} days`,
+        due:      diff === 0 ? "Today" : diff === 1 ? "Tomorrow" : `In ${diff} days`,
         priority: diff <= 1 ? "high" : "medium",
       };
     });
 
     const classesWithCounts = await Promise.all(
-      classList.map(async (cls) => ({
-        name: cls,
-        subject: teacher.subject,
+      classList.map(async cls => ({
+        name:     cls,
+        subject:  teacher.subject,
         students: await Student.countDocuments({ class: cls }),
       }))
     );
@@ -90,6 +95,7 @@ export const getTeacherDashboard = async (req, res) => {
       },
     });
   } catch (err) {
+    console.error("getTeacherDashboard:", err);
     res.status(500).json({ success: false, message: err.message });
   }
 };
@@ -101,7 +107,7 @@ export const getMyStudents = async (req, res) => {
     if (!teacher) return res.status(404).json({ success: false, message: "Teacher not found" });
 
     const classList = teacher.classesAssigned
-      ? teacher.classesAssigned.split(",").map((c) => c.trim()).filter(Boolean)
+      ? teacher.classesAssigned.split(",").map(c => c.trim()).filter(Boolean)
       : [];
 
     const filter = { class: { $in: classList } };
@@ -110,6 +116,7 @@ export const getMyStudents = async (req, res) => {
     const students = await Student.find(filter).sort({ firstName: 1 });
     res.json({ success: true, data: students });
   } catch (err) {
+    console.error("getMyStudents:", err);
     res.status(500).json({ success: false, message: err.message });
   }
 };
@@ -121,11 +128,11 @@ export const getMyGrades = async (req, res) => {
     if (!teacher) return res.status(404).json({ success: false, message: "Teacher not found" });
 
     const classList = teacher.classesAssigned
-      ? teacher.classesAssigned.split(",").map((c) => c.trim()).filter(Boolean)
+      ? teacher.classesAssigned.split(",").map(c => c.trim()).filter(Boolean)
       : [];
 
     const studentIds = (await Student.find({ class: { $in: classList } }).select("_id"))
-      .map((s) => s._id);
+      .map(s => s._id);
 
     const filter = { student: { $in: studentIds } };
     if (req.query.subject) filter.subject = req.query.subject;
@@ -133,10 +140,12 @@ export const getMyGrades = async (req, res) => {
 
     const grades = await Grade.find(filter)
       .populate("student", "firstName lastName admissionNo class")
-      .sort({ date: -1 }).limit(50);
+      .sort({ date: -1 })
+      .limit(50);
 
     res.json({ success: true, data: grades });
   } catch (err) {
+    console.error("getMyGrades:", err);
     res.status(500).json({ success: false, message: err.message });
   }
 };
@@ -151,11 +160,21 @@ export const enterGrade = async (req, res) => {
         message: "studentId, subject, score, term and year are required",
       });
     }
+    // ✅ compute grade letter directly — no pre hook needed
     const grade = await Grade.create({
-      student: studentId, subject, score: Number(score), term, year, examType, date, remarks,
+      student:  studentId,
+      subject,
+      score:    Number(score),
+      grade:    letterGrade(Number(score)),
+      term,
+      year,
+      examType: examType || "End Term",
+      date,
+      remarks,
     });
     res.status(201).json({ success: true, data: grade });
   } catch (err) {
+    console.error("enterGrade:", err);
     res.status(500).json({ success: false, message: err.message });
   }
 };
@@ -183,10 +202,12 @@ export const enterGradeByAdmission = async (req, res) => {
       });
     }
 
+    // ✅ compute grade letter directly — no pre hook needed
     const grade = await Grade.create({
       student:  student._id,
       subject,
       score:    Number(score),
+      grade:    letterGrade(Number(score)),
       term,
       year,
       examType: examType || "End Term",
@@ -204,6 +225,7 @@ export const enterGradeByAdmission = async (req, res) => {
       },
     });
   } catch (err) {
+    console.error("enterGradeByAdmission:", err);
     res.status(500).json({ success: false, message: err.message });
   }
 };
@@ -215,12 +237,14 @@ export const getMyAssignments = async (req, res) => {
     if (!teacher) return res.status(404).json({ success: false, message: "Teacher not found" });
 
     const classList = teacher.classesAssigned
-      ? teacher.classesAssigned.split(",").map((c) => c.trim()).filter(Boolean)
+      ? teacher.classesAssigned.split(",").map(c => c.trim()).filter(Boolean)
       : [];
 
-    const assignments = await Assignment.find({ class: { $in: classList } }).sort({ dueDate: 1 });
+    const assignments = await Assignment.find({ class: { $in: classList } })
+      .sort({ dueDate: 1 });
     res.json({ success: true, data: assignments });
   } catch (err) {
+    console.error("getMyAssignments:", err);
     res.status(500).json({ success: false, message: err.message });
   }
 };
@@ -240,6 +264,7 @@ export const createAssignment = async (req, res) => {
     });
     res.status(201).json({ success: true, data: assignment });
   } catch (err) {
+    console.error("createAssignment:", err);
     res.status(500).json({ success: false, message: err.message });
   }
 };
@@ -250,9 +275,8 @@ export const getSubmissions = async (req, res) => {
     const teacher = await getTeacherDoc(req);
     if (!teacher) return res.status(404).json({ success: false, message: "Teacher not found" });
 
-    // Confirm the assignment belongs to one of this teacher's classes
     const classList = teacher.classesAssigned
-      ? teacher.classesAssigned.split(",").map((c) => c.trim()).filter(Boolean)
+      ? teacher.classesAssigned.split(",").map(c => c.trim()).filter(Boolean)
       : [];
 
     const assignment = await Assignment.findOne({
@@ -275,11 +299,8 @@ export const getSubmissions = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MATERIALS
-// ─────────────────────────────────────────────────────────────────────────────
+// ── MATERIALS ─────────────────────────────────────────────────────────────────
 
-// POST /api/teacher-dashboard/materials
 export const uploadMaterial = async (req, res) => {
   try {
     const { title, subject, description } = req.body;
@@ -336,7 +357,6 @@ export const uploadMaterial = async (req, res) => {
   }
 };
 
-// GET /api/teacher-dashboard/materials
 export const getMyMaterials = async (req, res) => {
   try {
     const teacher = await getTeacherDoc(req);
@@ -353,7 +373,6 @@ export const getMyMaterials = async (req, res) => {
   }
 };
 
-// DELETE /api/teacher-dashboard/materials/:id
 export const deleteMaterial = async (req, res) => {
   try {
     const teacher = await getTeacherDoc(req);
@@ -379,20 +398,24 @@ export const deleteMaterial = async (req, res) => {
   }
 };
 
+// ── MESSAGES ──────────────────────────────────────────────────────────────────
 
 export const getMessages = async (req, res) => {
   try {
     const teacher = await getTeacherDoc(req);
     if (!teacher) return res.status(404).json({ success: false, message: "Teacher not found" });
+
     const messages = await Message.find({ teacher: teacher._id })
       .populate("parent",  "firstName lastName email phone")
       .populate("student", "firstName lastName admissionNo class")
       .sort({ createdAt: -1 })
       .lean();
+
     await Message.updateMany(
       { teacher: teacher._id, sentBy: "parent", read: false },
       { read: true }
     );
+
     res.json({ success: true, data: messages });
   } catch (err) {
     console.error("getMessages:", err);
@@ -404,18 +427,42 @@ export const replyMessage = async (req, res) => {
   try {
     const teacher = await getTeacherDoc(req);
     if (!teacher) return res.status(404).json({ success: false, message: "Teacher not found" });
+
     const { parentId, studentId, body } = req.body;
-    if (!body?.trim()) return res.status(400).json({ success: false, message: "Message body is required" });
-    if (!parentId || !studentId) return res.status(400).json({ success: false, message: "parentId and studentId are required" });
-    const existing = await Message.findOne({ teacher: teacher._id, parent: parentId, student: studentId });
-    if (!existing) return res.status(403).json({ success: false, message: "No existing thread." });
-    const message = await Message.create({
-      parent: parentId, teacher: teacher._id, student: studentId, body: body.trim(), sentBy: "teacher",
+
+    if (!body?.trim()) {
+      return res.status(400).json({ success: false, message: "Message body is required" });
+    }
+    if (!parentId || !studentId) {
+      return res.status(400).json({ success: false, message: "parentId and studentId are required" });
+    }
+
+    const existing = await Message.findOne({
+      teacher: teacher._id,
+      parent:  parentId,
+      student: studentId,
     });
+
+    if (!existing) {
+      return res.status(403).json({
+        success: false,
+        message: "No existing thread. Teachers can only reply to messages they received.",
+      });
+    }
+
+    const message = await Message.create({
+      parent:  parentId,
+      teacher: teacher._id,
+      student: studentId,
+      body:    body.trim(),
+      sentBy:  "teacher",
+    });
+
     await Message.updateMany(
       { teacher: teacher._id, parent: parentId, student: studentId, sentBy: "parent", read: false },
       { read: true }
     );
+
     res.status(201).json({ success: true, data: message });
   } catch (err) {
     console.error("replyMessage:", err);

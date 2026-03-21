@@ -1,5 +1,23 @@
 import mongoose from "mongoose";
 
+// ── Compute letter grade from score ──────────────────────────────────────────
+// Called explicitly in the controller instead of using a pre hook
+// (pre hooks cause "next is not a function" with Grade.create() in some
+//  Mongoose/Node versions)
+export function letterGrade(score) {
+  if (score >= 90) return "A";
+  if (score >= 80) return "A-";
+  if (score >= 75) return "B+";
+  if (score >= 70) return "B";
+  if (score >= 65) return "B-";
+  if (score >= 60) return "C+";
+  if (score >= 55) return "C";
+  if (score >= 50) return "C-";
+  if (score >= 45) return "D+";
+  if (score >= 40) return "D";
+  return "E";
+}
+
 const gradeSchema = new mongoose.Schema(
   {
     student:  { type: mongoose.Schema.Types.ObjectId, ref: "Student", required: true },
@@ -14,26 +32,5 @@ const gradeSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
-
-// ── Auto-derive letter grade from score ───────────────────────────────────────
-// Use "validate" instead of "save" so it works with both
-// Grade.create() and new Grade().save()
-gradeSchema.pre("validate", function (next) {
-  if (!this.grade) {
-    const s = this.score;
-    if      (s >= 90) this.grade = "A";
-    else if (s >= 80) this.grade = "A-";
-    else if (s >= 75) this.grade = "B+";
-    else if (s >= 70) this.grade = "B";
-    else if (s >= 65) this.grade = "B-";
-    else if (s >= 60) this.grade = "C+";
-    else if (s >= 55) this.grade = "C";
-    else if (s >= 50) this.grade = "C-";
-    else if (s >= 45) this.grade = "D+";
-    else if (s >= 40) this.grade = "D";
-    else              this.grade = "E";
-  }
-  next();
-});
 
 export default mongoose.models.Grade || mongoose.model("Grade", gradeSchema);
