@@ -14,8 +14,6 @@ const __dirname     = path.dirname(__filename);
 const MATERIALS_DIR = path.join(__dirname, "../uploads/materials");
 
 // ── Helper: get Student doc from JWT ─────────────────────────────────────────
-// protect middleware sets req.user = { id, role } from the JWT payload.
-// We use req.user.id to fetch the full Student document including .class.
 const getStudentDoc = async (req) => {
   const id = req.user?.id ?? req.user?._id;
   if (!id) return null;
@@ -32,7 +30,6 @@ export const getDashboard = async (req, res) => {
       return res.status(404).json({ success: false, message: "Student profile not found." });
     }
 
-    // Run all queries in parallel for speed
     const [grades, assignments, announcements, submissions] = await Promise.all([
       Grade.find({ student: student._id }).sort({ date: -1 }).limit(5).lean(),
       Assignment.find({ class: student.class, dueDate: { $gte: new Date() } })
@@ -42,14 +39,12 @@ export const getDashboard = async (req, res) => {
       Submission.find({ student: student._id }).distinct("assignment"),
     ]);
 
-    // Mark which assignments are already submitted
     const submittedSet = new Set(submissions.map(String));
     const enrichedAssignments = assignments.map((a) => ({
       ...a,
       submitted: submittedSet.has(String(a._id)),
     }));
 
-    // Fee info
     let finance = { totalFees: 0, amountPaid: 0, balance: 0, feeStatus: "pending" };
     try {
       const currentYear = String(new Date().getFullYear());
@@ -63,7 +58,7 @@ export const getDashboard = async (req, res) => {
         totalFees, amountPaid, balance,
         feeStatus: totalFees === 0 ? "cleared" : balance <= 0 ? "cleared" : amountPaid > 0 ? "partial" : "pending",
       };
-    } catch { /* Finance model not set up yet — return defaults */ }
+    } catch { /* Finance model not set up yet */ }
 
     const avgScore = grades.length
       ? Math.round(grades.reduce((s, g) => s + g.score, 0) / grades.length)
@@ -217,17 +212,25 @@ export const getMaterials = async (req, res) => {
 export const downloadMaterial = async (req, res) => {
   try {
     const student  = await getStudentDoc(req);
-    const material = await Material.findById(req.params.id).lean();
+    if (!student) return res.status(401).json({ message: "Unauthorized" });
 
+    const material = await Material.findById(req.params.id).lean();
     if (!material) return res.status(404).json({ message: "Material not found" });
-    if (material.class !== student.class) return res.status(403).json({ message: "Access denied" });
+
+    // Students can only download materials for their own class
+    if (material.class !== student.class) {
+      return res.status(403).json({ message: "Access denied" });
+    }
 
     const filePath = path.join(MATERIALS_DIR, material.storedFileName);
-    if (!fs.existsSync(filePath)) return res.status(404).json({ message: "File not found on server" });
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ message: "File not found on server" });
+    }
 
     res.setHeader("Content-Disposition", `attachment; filename="${material.fileName}"`);
     res.setHeader("Content-Type",        material.fileType);
-    res.setHeader("Content-Length",      material.fileSize);
+    // FIX: cast to String — Node/Express can throw when given a Number here
+    res.setHeader("Content-Length",      String(material.fileSize));
 
     const stream = fs.createReadStream(filePath);
     stream.on("error", () => res.status(500).json({ message: "Failed to read file" }));

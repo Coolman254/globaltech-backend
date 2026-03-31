@@ -2,22 +2,27 @@ import mongoose from "mongoose";
 
 const materialSchema = new mongoose.Schema(
   {
-    title:          { type: String, required: true, trim: true },
-    subject:        { type: String, required: true, trim: true },
-    class:          { type: String, required: true, trim: true },
-    description:    { type: String, default: "" },
+    title:       { type: String, required: true, trim: true },
+    subject:     { type: String, default: "", trim: true },
+    class:       { type: String, required: true, trim: true },
+    description: { type: String, default: "" },
 
-    uploadedBy:     { type: mongoose.Schema.Types.ObjectId, ref: "Teacher", required: true },
+    uploadedBy:  { type: mongoose.Schema.Types.ObjectId, ref: "Teacher", required: true },
 
+    // Original filename shown in the UI (e.g. "Chapter 3 Notes.pdf")
     fileName:       { type: String, required: true },
+
+    // FIX: unique filename stored on disk (e.g. "1714000000000-837261234.pdf")
+    // downloadMaterial reads this field to build the file path — it MUST be saved on upload
     storedFileName: { type: String, required: true },
-    fileType:       { type: String, required: true },
-    fileSize:       { type: Number, required: true },
-    fileUrl:        { type: String, default: "" },
+
+    fileType: { type: String, default: "" },
+    fileSize: { type: Number, default: 0 },
+
+    // Convenience URL for direct static access (optional — download route is preferred)
+    fileUrl: { type: String, default: "" },
   },
-  { timestamps: true },
+  { timestamps: true }
 );
 
-materialSchema.index({ class: 1, createdAt: -1 });
-
-export default mongoose.models.Material || mongoose.model("Material", materialSchema);
+export default mongoose.model("Material", materialSchema);

@@ -6,14 +6,22 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 
-// ── Ensure uploads folder exists ─────────────────────────────────────────────
-const uploadDir = path.join(__dirname, "../uploads");
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+// ── FIX: Point specifically to the materials subfolder ──────────────────────
+const uploadDir = path.resolve(__dirname, "../uploads/materials");
+
+// Create the directory if it doesn't exist
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
 
 // ── Storage config ────────────────────────────────────────────────────────────
 const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, uploadDir),
-  filename:    (_req, file, cb) => {
+  destination: (_req, _file, cb) => {
+    // Ensure we use the specific materials directory
+    cb(null, uploadDir);
+  },
+  filename: (_req, file, cb) => {
+    // Keep the unique naming convention
     const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
     cb(null, `${unique}${path.extname(file.originalname)}`);
   },
@@ -25,7 +33,13 @@ const fileFilter = (_req, file, cb) => {
     "application/pdf",
     "video/mp4", "video/mpeg", "video/quicktime", "video/webm",
     "image/jpeg", "image/png", "image/gif", "image/webp",
+    // Added common document types often missed
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation"
   ];
+  
   if (allowed.includes(file.mimetype)) {
     cb(null, true);
   } else {
@@ -33,7 +47,10 @@ const fileFilter = (_req, file, cb) => {
   }
 };
 
-// ── Upload middleware (max 100 MB) ────────────────────────────────────────────
-const upload = multer({ storage, fileFilter, limits: { fileSize: 100 * 1024 * 1024 } });
+const upload = multer({ 
+  storage, 
+  fileFilter, 
+  limits: { fileSize: 100 * 1024 * 1024 } 
+});
 
 export default upload;

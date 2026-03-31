@@ -36,6 +36,7 @@ app.use(cors({
     "https://frolicking-sherbet-aee998.netlify.app",
   ],
   credentials: true,
+  exposedHeaders: ["Content-Type", "Content-Disposition","Content-Length"],
 }));
 app.use(express.json());
 
