@@ -20,9 +20,18 @@ import studentFinanceRoutes from "./routes/studentFinanceRoutes.js";
 
 dotenv.config();
 
+// ── Guard required environment variables ─────────────────────────────────────
+const REQUIRED_ENV = ["MONGO_URI"];
+for (const key of REQUIRED_ENV) {
+  if (!process.env[key]) {
+    console.error(`❌ Missing required environment variable: ${key}`);
+    process.exit(1);
+  }
+}
+
 // ── ESM-safe __dirname ────────────────────────────────────────────────────────
 const __filename = fileURLToPath(import.meta.url);
-const __dirname  = path.dirname(__filename); // ✅ was __path__.dirname
+const __dirname  = path.dirname(__filename);
 
 const PORT = process.env.PORT || 5000;
 const app  = express();
@@ -36,7 +45,7 @@ app.use(cors({
     "https://frolicking-sherbet-aee998.netlify.app",
   ],
   credentials: true,
-  exposedHeaders: ["Content-Type", "Content-Disposition","Content-Length"],
+  exposedHeaders: ["Content-Type", "Content-Disposition", "Content-Length"],
 }));
 app.use(express.json());
 
@@ -65,7 +74,10 @@ app.use("/api/student-finance",    studentFinanceRoutes);
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => {
-    console.log("MongoDB connected");
-    app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+    console.log("✅ MongoDB connected");
+    app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
   })
-  .catch(err => console.error("DB connection error:", err));
+  .catch(err => {
+    console.error("❌ DB connection error:", err.message);
+    process.exit(1); // Exit with error so Render shows the real failure reason
+  });
