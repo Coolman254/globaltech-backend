@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import Student    from "../models/Student.js";
+import User   from "../models/User.js";
 import Grade      from "../models/Grade.js";
 import Assignment from "../models/Assignment.js";
 import Announcement from "../models/Announcement.js";
@@ -17,7 +17,7 @@ const MATERIALS_DIR = path.join(__dirname, "../uploads/materials");
 const getStudentDoc = async (req) => {
   const id = req.user?.id ?? req.user?._id;
   if (!id) return null;
-  return Student.findById(id).lean();
+  return User.findById(id).lean();
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

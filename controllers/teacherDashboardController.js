@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import Teacher     from "../models/Teacher.js";
+import User     from "../models/User.js";
 import Student     from "../models/Student.js";
 import Grade       from "../models/Grade.js";
 import Assignment  from "../models/Assignment.js";
@@ -24,7 +24,7 @@ if (!fs.existsSync(MATERIALS_DIR)) {
 const getTeacherDoc = async (req) => {
   const id = req.user?.id ?? req.user?._id;
   if (!id) return null;
-  return Teacher.findById(id).lean();
+  return User.findById(id).lean();
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
