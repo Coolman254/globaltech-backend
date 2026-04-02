@@ -4,20 +4,21 @@ import mongoose from "mongoose";
 const paymentSchema = new mongoose.Schema(
   {
     student: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Student",
+      type:     mongoose.Schema.Types.ObjectId,
+      ref:      "Student",
       required: [true, "Student reference is required"],
     },
     studentName: { type: String, required: true },
     admNo:       { type: String, required: true, uppercase: true },
     amount: {
-      type: Number,
+      type:     Number,
       required: [true, "Amount is required"],
-      min: [1, "Amount must be greater than 0"],
+      min:      [1, "Amount must be greater than 0"],
     },
     method: {
-      type: String,
+      type:     String,
       required: [true, "Payment method is required"],
+      // ✅ FIXED: enum matches all normalised values from the controller
       enum: ["M-Pesa", "Bank Transfer", "Cash", "Cheque"],
     },
     reference: { type: String, required: true, trim: true },
@@ -28,13 +29,13 @@ const paymentSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Auto-generate receipt number before saving
-paymentSchema.pre("save", async function (next) {
+// ✅ FIXED: removed `next` parameter from async pre-save hook.
+// With async functions Mongoose does NOT pass next() — just return the promise.
+paymentSchema.pre("save", async function () {
   if (!this.receipt) {
     const count = await mongoose.model("Payment").countDocuments();
     this.receipt = `RCP${String(count + 1).padStart(4, "0")}`;
   }
-  next();
 });
 
 // ── Fee Structure Schema ───────────────────────────────────────────────────────
@@ -46,7 +47,7 @@ const feeStructureSchema = new mongoose.Schema(
     tuition:  { type: Number, required: true, min: 0 },
     boarding: { type: Number, required: true, min: 0 },
     activity: { type: Number, required: true, min: 0 },
-    other:    { type: Number, default: 0, min: 0 },
+    other:    { type: Number, default: 0,    min: 0 },
   },
   { timestamps: true }
 );
@@ -58,7 +59,7 @@ feeStructureSchema.virtual("total").get(function () {
 
 // One fee structure per class+term+year
 feeStructureSchema.index({ class: 1, term: 1, year: 1 }, { unique: true });
-feeStructureSchema.set("toJSON", { virtuals: true });
+feeStructureSchema.set("toJSON",   { virtuals: true });
 feeStructureSchema.set("toObject", { virtuals: true });
 
 export const Payment      = mongoose.model("Payment",      paymentSchema);

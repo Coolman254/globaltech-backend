@@ -53,8 +53,9 @@ export const getStudents = async (req, res) => {
 
     if (search) {
       filter.$or = [
-        { name:  { $regex: search, $options: "i" } },
-        { admNo: { $regex: search, $options: "i" } },
+        { firstName:   { $regex: search, $options: "i" } },
+        { lastName:    { $regex: search, $options: "i" } },
+        { admissionNo: { $regex: search, $options: "i" } },
       ];
     }
     if (cls  && cls  !== "all") filter.class = cls;
@@ -66,7 +67,6 @@ export const getStudents = async (req, res) => {
       .map((s) => s.toJSON ? s.toJSON() : s)
       .map(deriveFields);
 
-    // Status is a derived virtual so filter it here after deriving
     if (status && status !== "all") {
       result = result.filter((s) => s.status === status);
     }
@@ -128,7 +128,14 @@ export const recordPayment = async (req, res) => {
       });
     }
 
-    const student = await Student.findOne({ admNo: admNo.toUpperCase() });
+    // Search by admissionNo — handle both string and number stored values
+    const student = await Student.findOne({
+      $or: [
+        { admissionNo: String(admNo).trim() },
+        { admissionNo: Number(admNo) },
+      ],
+    });
+
     if (!student) {
       return res.status(404).json({
         success: false,
@@ -136,15 +143,27 @@ export const recordPayment = async (req, res) => {
       });
     }
 
+    // Normalise payment method to match schema enum
+    const methodMap = {
+      "mpesa":           "M-Pesa",
+      "m-pesa":          "M-Pesa",
+      "m_pesa":          "M-Pesa",
+      "bank":            "Bank Transfer",
+      "bank transfer":   "Bank Transfer",
+      "cash":            "Cash",
+      "cheque":          "Cheque",
+    };
+    const normalisedMethod = methodMap[method.toLowerCase()] ?? method;
+
     const payment = await Payment.create({
       student:     student._id,
-      studentName: student.name,
-      admNo:       student.admNo,
+      studentName: student.fullName ?? `${student.firstName} ${student.lastName}`,
+      admNo:       String(student.admissionNo),
       amount:      Number(amount),
-      method,
+      method:      normalisedMethod,
       reference,
       date:        new Date(date),
-      notes,
+      notes:       notes ?? "",
     });
 
     // Update student's amountPaid, capped at totalFees
@@ -171,7 +190,6 @@ export const reversePayment = async (req, res) => {
       return res.status(404).json({ success: false, message: "Payment not found" });
     }
 
-    // Deduct reversed amount from student — floor at 0
     const student = await Student.findById(payment.student);
     const newAmountPaid = Math.max(0, (student?.amountPaid || 0) - payment.amount);
     await Student.findByIdAndUpdate(payment.student, { amountPaid: newAmountPaid });
