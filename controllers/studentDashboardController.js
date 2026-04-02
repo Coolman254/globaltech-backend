@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import User   from "../models/User.js";
+import Student   from "../models/Student.js";
 import Grade      from "../models/Grade.js";
 import Assignment from "../models/Assignment.js";
 import Announcement from "../models/Announcement.js";
@@ -15,11 +15,14 @@ const MATERIALS_DIR = path.join(__dirname, "../uploads/materials");
 
 // ── Helper: get Student doc from JWT ─────────────────────────────────────────
 const getStudentDoc = async (req) => {
+  console.log("🔍 req.user:", req.user);
   const id = req.user?.id ?? req.user?._id;
+  console.log("🔍 Looking up id:", id);
   if (!id) return null;
-  return User.findById(id).lean();
+  const student = await Student.findById(id).lean();
+  console.log("🔍 Found student:", student);
+  return student;
 };
-
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/student-dashboard
 // ─────────────────────────────────────────────────────────────────────────────

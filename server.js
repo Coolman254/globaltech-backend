@@ -1,7 +1,7 @@
 import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
-
+import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
 import authRoutes from "./routes/authRoutes.js";
@@ -20,7 +20,7 @@ import studentFinanceRoutes from "./routes/studentFinanceRoutes.js";
 
 // ── Only load .env locally, Render injects env vars directly ─────────────────
 if (process.env.NODE_ENV !== "production") {
-  
+  dotenv.config();
 }
 
 // ── Guard required environment variables ─────────────────────────────────────
