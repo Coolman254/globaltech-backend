@@ -1,31 +1,16 @@
 import multer from "multer";
-import path from "path";
-import fs from "fs";
-import { fileURLToPath } from "url";
+import { v2 as cloudinary } from "cloudinary";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname  = path.dirname(__filename);
-
-// ── FIX: Point specifically to the materials subfolder ──────────────────────
-const uploadDir = path.resolve(__dirname, "../uploads/materials");
-
-// Create the directory if it doesn't exist
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-// ── Storage config ────────────────────────────────────────────────────────────
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    // Ensure we use the specific materials directory
-    cb(null, uploadDir);
-  },
-  filename: (_req, file, cb) => {
-    // Keep the unique naming convention
-    const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-    cb(null, `${unique}${path.extname(file.originalname)}`);
-  },
+// ── Cloudinary config ─────────────────────────────────────────────────────────
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key:    process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
 });
+
+// ── Use memory storage — we upload the buffer to Cloudinary manually ──────────
+// This avoids multer-storage-cloudinary entirely
+const storage = multer.memoryStorage();
 
 // ── File type filter ──────────────────────────────────────────────────────────
 const fileFilter = (_req, file, cb) => {
@@ -33,13 +18,11 @@ const fileFilter = (_req, file, cb) => {
     "application/pdf",
     "video/mp4", "video/mpeg", "video/quicktime", "video/webm",
     "image/jpeg", "image/png", "image/gif", "image/webp",
-    // Added common document types often missed
     "application/msword",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "application/vnd.ms-powerpoint",
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   ];
-  
   if (allowed.includes(file.mimetype)) {
     cb(null, true);
   } else {
@@ -47,10 +30,37 @@ const fileFilter = (_req, file, cb) => {
   }
 };
 
-const upload = multer({ 
-  storage, 
-  fileFilter, 
-  limits: { fileSize: 100 * 1024 * 1024 } 
+const upload = multer({
+  storage,
+  fileFilter,
+  limits: { fileSize: 100 * 1024 * 1024 },
 });
 
+// ── Helper: upload buffer to Cloudinary ───────────────────────────────────────
+// Call this inside your controller after multer runs
+export const uploadToCloudinary = (buffer, mimetype, originalname) => {
+  return new Promise((resolve, reject) => {
+    let resourceType = "raw";
+    if (mimetype.startsWith("image/")) resourceType = "image";
+    if (mimetype.startsWith("video/")) resourceType = "video";
+
+    const publicId = `school-materials/${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        resource_type: resourceType,
+        public_id:     publicId,
+        folder:        "school-materials",
+      },
+      (error, result) => {
+        if (error) return reject(error);
+        resolve(result);
+      }
+    );
+
+    stream.end(buffer);
+  });
+};
+
+export { cloudinary };
 export default upload;

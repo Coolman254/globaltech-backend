@@ -1,28 +1,18 @@
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
-import Student   from "../models/Student.js";
-import Grade      from "../models/Grade.js";
-import Assignment from "../models/Assignment.js";
+import Student      from "../models/Student.js";
+import Grade        from "../models/Grade.js";
+import Assignment   from "../models/Assignment.js";
 import Announcement from "../models/Announcement.js";
-import Material   from "../models/Material.js";
-import Submission from "../models/Submission.js";
+import Material     from "../models/Material.js";
+import Submission   from "../models/Submission.js";
 import { Payment, FeeStructure } from "../models/Finance.js";
-
-const __filename    = fileURLToPath(import.meta.url);
-const __dirname     = path.dirname(__filename);
-const MATERIALS_DIR = path.join(__dirname, "../uploads/materials");
 
 // ── Helper: get Student doc from JWT ─────────────────────────────────────────
 const getStudentDoc = async (req) => {
-  console.log("🔍 req.user:", req.user);
   const id = req.user?.id ?? req.user?._id;
-  console.log("🔍 Looking up id:", id);
   if (!id) return null;
-  const student = await Student.findById(id).lean();
-  console.log("🔍 Found student:", student);
-  return student;
+  return Student.findById(id).lean();
 };
+
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/student-dashboard
 // ─────────────────────────────────────────────────────────────────────────────
@@ -61,7 +51,7 @@ export const getDashboard = async (req, res) => {
         totalFees, amountPaid, balance,
         feeStatus: totalFees === 0 ? "cleared" : balance <= 0 ? "cleared" : amountPaid > 0 ? "partial" : "pending",
       };
-    } catch { /* Finance model not set up yet */ }
+    } catch { /* Finance not set up yet */ }
 
     const avgScore = grades.length
       ? Math.round(grades.reduce((s, g) => s + g.score, 0) / grades.length)
@@ -210,11 +200,11 @@ export const getMaterials = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /api/student-dashboard/materials/:id/download
+// GET /api/student-dashboard/materials/:id/download  ← Cloudinary redirect
 // ─────────────────────────────────────────────────────────────────────────────
 export const downloadMaterial = async (req, res) => {
   try {
-    const student  = await getStudentDoc(req);
+    const student = await getStudentDoc(req);
     if (!student) return res.status(401).json({ message: "Unauthorized" });
 
     const material = await Material.findById(req.params.id).lean();
@@ -225,19 +215,13 @@ export const downloadMaterial = async (req, res) => {
       return res.status(403).json({ message: "Access denied" });
     }
 
-    const filePath = path.join(MATERIALS_DIR, material.storedFileName);
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ message: "File not found on server" });
+    // fileUrl is now a permanent Cloudinary URL — redirect to it
+    if (!material.fileUrl) {
+      return res.status(404).json({ message: "File URL not available" });
     }
 
-    res.setHeader("Content-Disposition", `attachment; filename="${material.fileName}"`);
-    res.setHeader("Content-Type",        material.fileType);
-    // FIX: cast to String — Node/Express can throw when given a Number here
-    res.setHeader("Content-Length",      String(material.fileSize));
-
-    const stream = fs.createReadStream(filePath);
-    stream.on("error", () => res.status(500).json({ message: "Failed to read file" }));
-    stream.pipe(res);
+    // Browser will download the file directly from Cloudinary
+    res.redirect(material.fileUrl);
   } catch (err) {
     console.error("downloadMaterial:", err);
     res.status(500).json({ success: false, message: err.message });
@@ -253,19 +237,16 @@ export const submitAssignment = async (req, res) => {
     const { answer = "" } = req.body;
 
     if (!answer.trim() && !req.file) {
-      if (req.file) fs.unlink(req.file.path, () => {});
       return res.status(400).json({ message: "Please provide an answer or attach a file" });
     }
 
     const assignment = await Assignment.findById(req.params.id).lean();
     if (!assignment) {
-      if (req.file) fs.unlink(req.file.path, () => {});
       return res.status(404).json({ message: "Assignment not found" });
     }
 
     const existing = await Submission.findOne({ student: student._id, assignment: assignment._id });
     if (existing) {
-      if (req.file) fs.unlink(req.file.path, () => {});
       return res.status(409).json({ message: "You have already submitted this assignment" });
     }
 
@@ -295,7 +276,6 @@ export const submitAssignment = async (req, res) => {
       submission: { _id: submission._id, submittedAt: submission.submittedAt },
     });
   } catch (err) {
-    if (req.file) fs.unlink(req.file.path, () => {});
     console.error("submitAssignment:", err);
     res.status(500).json({ success: false, message: err.message });
   }

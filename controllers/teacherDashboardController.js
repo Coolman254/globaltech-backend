@@ -1,38 +1,22 @@
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
-import Teacher     from "../models/Teacher.js";  // ✅ FIXED: was User
-import Student     from "../models/Student.js";
-import Grade       from "../models/Grade.js";
-import Assignment  from "../models/Assignment.js";
-import Submission  from "../models/Submission.js";
+import Teacher      from "../models/Teacher.js";
+import Student      from "../models/Student.js";
+import Grade        from "../models/Grade.js";
+import Assignment   from "../models/Assignment.js";
+import Submission   from "../models/Submission.js";
 import Announcement from "../models/Announcement.js";
-import Material    from "../models/Material.js";
-import Attendance  from "../models/Attendance.js";
-import Message     from "../models/Message.js";
-
-const __filename    = fileURLToPath(import.meta.url);
-const __dirname     = path.dirname(__filename);
-const MATERIALS_DIR = path.join(__dirname, "../uploads/materials");
-
-if (!fs.existsSync(MATERIALS_DIR)) {
-  fs.mkdirSync(MATERIALS_DIR, { recursive: true });
-}
+import Material     from "../models/Material.js";
+import Attendance   from "../models/Attendance.js";
+import Message      from "../models/Message.js";
+import { uploadToCloudinary, cloudinary } from "../middleware/upload.js";
 
 // ── Helper: get Teacher doc from JWT ─────────────────────────────────────────
-// Teachers log in via /api/auth/login which stores a User._id in the JWT.
-// We need to find the matching Teacher by email via the User record,
-// OR if teachers log in with their own auth, look up directly by _id.
-// Strategy: try Teacher.findById first, then fall back via email match.
 const getTeacherDoc = async (req) => {
   const id = req.user?.id ?? req.user?._id;
   if (!id) return null;
 
-  // First try: teacher's own _id stored in JWT (if teacher has separate auth)
   let teacher = await Teacher.findById(id).lean();
   if (teacher) return teacher;
 
-  // Second try: JWT stores a User._id — find User then match Teacher by email
   try {
     const User = (await import("../models/User.js")).default;
     const user = await User.findById(id).lean();
@@ -45,8 +29,6 @@ const getTeacherDoc = async (req) => {
 };
 
 // ── Helper: get classes array from teacher doc ────────────────────────────────
-// Teacher model stores classesAssigned as a comma-separated string e.g. "Form 1,Form 2"
-// We normalise it to an array everywhere.
 const getClasses = (teacher) => {
   if (!teacher) return [];
   if (Array.isArray(teacher.classes)) return teacher.classes;
@@ -154,27 +136,17 @@ export const getGrades = async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 export const enterGrade = async (req, res) => {
   try {
-    const {
-      studentId, subject, score, grade, term,
-      year,      // ✅ FIXED: now extracted from body
-      examType, remarks, class: cls,
-    } = req.body;
+    const { studentId, subject, score, grade, term, year, examType, remarks, class: cls } = req.body;
 
     if (!studentId || !subject || score == null) {
       return res.status(400).json({ success: false, message: "studentId, subject and score are required" });
     }
 
     const newGrade = await Grade.create({
-      student:  studentId,
-      subject,
-      score,
-      grade,
-      term,
-      year:     year ?? String(new Date().getFullYear()), // ✅ FIXED: fallback to current year
+      student:  studentId, subject, score, grade, term,
+      year:     year ?? String(new Date().getFullYear()),
       examType: examType ?? "End Term",
-      remarks,
-      class:    cls,
-      date:     new Date(),
+      remarks, class: cls, date: new Date(),
     });
     res.status(201).json({ success: true, data: newGrade });
   } catch (err) {
@@ -188,11 +160,7 @@ export const enterGrade = async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 export const enterGradeByAdmission = async (req, res) => {
   try {
-    const {
-      admissionNo, subject, score, grade, term,
-      year,        // ✅ FIXED: now extracted from body
-      examType, remarks,
-    } = req.body;
+    const { admissionNo, subject, score, grade, term, year, examType, remarks } = req.body;
 
     if (!admissionNo || !subject || score == null) {
       return res.status(400).json({ success: false, message: "admissionNo, subject and score are required" });
@@ -202,16 +170,10 @@ export const enterGradeByAdmission = async (req, res) => {
     if (!student) return res.status(404).json({ success: false, message: "Student not found" });
 
     const newGrade = await Grade.create({
-      student:  student._id,
-      subject,
-      score,
-      grade,
-      term,
-      year:     year ?? String(new Date().getFullYear()), // ✅ FIXED: fallback to current year
+      student: student._id, subject, score, grade, term,
+      year:     year ?? String(new Date().getFullYear()),
       examType: examType ?? "End Term",
-      remarks,
-      class:    student.class,
-      date:     new Date(),
+      remarks, class: student.class, date: new Date(),
     });
     res.status(201).json({ success: true, data: newGrade });
   } catch (err) {
@@ -253,8 +215,7 @@ export const createAssignment = async (req, res) => {
       return res.status(400).json({ success: false, message: "Title and class are required" });
     }
     const assignment = await Assignment.create({
-      title, description, subject, class: cls, dueDate, totalMarks,
-      teacher: teacher._id,
+      title, description, subject, class: cls, dueDate, totalMarks, teacher: teacher._id,
     });
     res.status(201).json({ success: true, data: assignment });
   } catch (err) {
@@ -292,15 +253,9 @@ export const getMaterials = async (req, res) => {
       .lean();
 
     const shaped = materials.map((m) => ({
-      _id:         m._id,
-      title:       m.title,
-      subject:     m.subject,
-      class:       m.class,
-      description: m.description ?? "",
-      fileName:    m.fileName,
-      fileType:    m.fileType,
-      fileSize:    m.fileSize,
-      createdAt:   m.createdAt,
+      _id: m._id, title: m.title, subject: m.subject, class: m.class,
+      description: m.description ?? "", fileName: m.fileName,
+      fileType: m.fileType, fileSize: m.fileSize, createdAt: m.createdAt,
     }));
 
     res.json({ success: true, data: shaped });
@@ -311,13 +266,12 @@ export const getMaterials = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /api/teacher-dashboard/materials
+// POST /api/teacher-dashboard/materials  ← Cloudinary via memoryStorage
 // ─────────────────────────────────────────────────────────────────────────────
 export const uploadMaterial = async (req, res) => {
   try {
     const teacher = await getTeacherDoc(req);
     if (!teacher) {
-      if (req.file) fs.unlink(req.file.path, () => {});
       return res.status(404).json({ success: false, message: "Teacher not found" });
     }
 
@@ -327,9 +281,15 @@ export const uploadMaterial = async (req, res) => {
 
     const { title, subject, class: cls, description } = req.body;
     if (!title || !cls) {
-      fs.unlink(req.file.path, () => {});
       return res.status(400).json({ success: false, message: "Title and class are required" });
     }
+
+    // Upload buffer directly to Cloudinary
+    const result = await uploadToCloudinary(
+      req.file.buffer,
+      req.file.mimetype,
+      req.file.originalname
+    );
 
     const material = await Material.create({
       title,
@@ -337,16 +297,15 @@ export const uploadMaterial = async (req, res) => {
       class:          cls,
       description:    description ?? "",
       uploadedBy:     teacher._id,
-      fileName:       req.file.originalname,
-      storedFileName: req.file.filename,
+      fileName:       req.file.originalname,  // shown in UI
+      storedFileName: result.public_id,        // Cloudinary public_id for deletion
       fileType:       req.file.mimetype,
       fileSize:       req.file.size,
-      fileUrl:        `/uploads/materials/${req.file.filename}`,
+      fileUrl:        result.secure_url,       // permanent Cloudinary URL
     });
 
     res.status(201).json({ success: true, data: material });
   } catch (err) {
-    if (req.file) fs.unlink(req.file.path, () => {});
     console.error("uploadMaterial:", err);
     res.status(500).json({ success: false, message: err.message });
   }
@@ -367,8 +326,9 @@ export const deleteMaterial = async (req, res) => {
       return res.status(403).json({ success: false, message: "Access denied" });
     }
 
-    const filePath = path.join(MATERIALS_DIR, material.storedFileName);
-    if (fs.existsSync(filePath)) fs.unlink(filePath, () => {});
+    if (material.storedFileName) {
+      await cloudinary.uploader.destroy(material.storedFileName).catch(() => {});
+    }
 
     await material.deleteOne();
     res.json({ success: true, message: "Material deleted" });
@@ -419,7 +379,7 @@ export const replyMessage = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /api/teacher-dashboard/attendance
+// GET  /api/teacher-dashboard/attendance
 // POST /api/teacher-dashboard/attendance
 // ─────────────────────────────────────────────────────────────────────────────
 export const getAttendance = async (req, res) => {
@@ -432,19 +392,14 @@ export const getAttendance = async (req, res) => {
     const start   = new Date(date); start.setHours(0, 0, 0, 0);
     const end     = new Date(date); end.setHours(23, 59, 59, 999);
 
-    // Return the student list for the teacher's classes so the
-    // frontend can render them even before attendance is marked
     const students = classes.length
       ? await Student.find({ class: { $in: classes } })
-          .select("firstName lastName fullName admissionNo class")
-          .lean()
+          .select("firstName lastName fullName admissionNo class").lean()
       : [];
 
     const records = classes.length
-      ? await Attendance.find({
-          class: { $in: classes },
-          date:  { $gte: start, $lte: end },
-        }).populate("student", "firstName lastName fullName admissionNo").lean()
+      ? await Attendance.find({ class: { $in: classes }, date: { $gte: start, $lte: end } })
+          .populate("student", "firstName lastName fullName admissionNo").lean()
       : [];
 
     res.json({ success: true, data: { students, records } });
@@ -469,12 +424,9 @@ export const markAttendance = async (req, res) => {
         filter: { student: r.studentId, date: new Date(date) },
         update: {
           $set: {
-            student:  r.studentId,
-            status:   r.status,
-            remarks:  r.remarks ?? "",
-            date:     new Date(date),
-            markedBy: teacher._id,
-            class:    r.class ?? "",
+            student: r.studentId, status: r.status,
+            remarks: r.remarks ?? "", date: new Date(date),
+            markedBy: teacher._id, class: r.class ?? "",
           },
         },
         upsert: true,
