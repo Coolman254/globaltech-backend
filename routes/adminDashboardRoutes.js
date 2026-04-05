@@ -3,6 +3,7 @@ import {
   getGrades, createGrade, updateGrade, deleteGrade,
   getAssignments, createAssignment, updateAssignment, deleteAssignment,
   getAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement,
+  getMaterials, uploadMaterial, deleteMaterial,
 } from "../controllers/adminDashboardController.js";
 import {
   adminGetAttendance,
@@ -11,6 +12,7 @@ import {
   adminMarkAttendance,
 } from "../controllers/attendanceController.js";
 import { protect, restrictTo } from "../middleware/authMiddleware.js";
+import upload from "../middleware/upload.js";
 
 const router = express.Router();
 router.use(protect);
@@ -28,7 +30,7 @@ router.post("/assignments",        createAssignment);
 router.put("/assignments/:id",     updateAssignment);
 router.delete("/assignments/:id",  deleteAssignment);
 
-// ── Announcements (admin only for create/update/delete) ───────────────────────
+// ── Announcements ─────────────────────────────────────────────────────────────
 router.get("/announcements",                              getAnnouncements);
 router.post("/announcements",   restrictTo("admin"),      createAnnouncement);
 router.put("/announcements/:id",restrictTo("admin"),      updateAnnouncement);
@@ -39,5 +41,10 @@ router.get("/attendance",         restrictTo("admin"), adminGetAttendance);
 router.post("/attendance",        restrictTo("admin"), adminMarkAttendance);
 router.put("/attendance/:id",     restrictTo("admin"), adminUpdateAttendance);
 router.delete("/attendance/:id",  restrictTo("admin"), adminDeleteAttendance);
+
+// ── Materials ─────────────────────────────────────────────────────────────────
+router.get("/materials",                         restrictTo("admin"), getMaterials);
+router.post("/materials", upload.single("file"), restrictTo("admin"), uploadMaterial);
+router.delete("/materials/:id",                  restrictTo("admin"), deleteMaterial);
 
 export default router;

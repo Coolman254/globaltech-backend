@@ -1,11 +1,11 @@
 // ── adminDashboardController.js ───────────────────────────────────────────────
-// Add these to your existing admin controllers or create a new file.
-// These let admins manage grades, assignments, and announcements.
 
-import Grade from "../models/Grade.js";
-import Assignment from "../models/Assignment.js";
+import Grade        from "../models/Grade.js";
+import Assignment   from "../models/Assignment.js";
 import Announcement from "../models/Announcement.js";
-import Student from "../models/Student.js";
+import Student      from "../models/Student.js";
+import Material     from "../models/Material.js";
+import { uploadToCloudinary, cloudinary } from "../middleware/upload.js";
 
 // ═══════════════════════════════════════════════════════
 // GRADES
@@ -140,6 +140,80 @@ export const deleteAnnouncement = async (req, res) => {
   try {
     await Announcement.findByIdAndDelete(req.params.id);
     res.json({ success: true, message: "Announcement deleted" });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ═══════════════════════════════════════════════════════
+// MATERIALS  (admin — no teacher filter)
+// ═══════════════════════════════════════════════════════
+
+// GET /api/admin-dashboard/materials
+export const getMaterials = async (req, res) => {
+  try {
+    const materials = await Material.find()
+      .populate("uploadedBy", "firstName lastName fullName")
+      .sort({ createdAt: -1 })
+      .lean();
+    res.json({ success: true, data: materials });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// POST /api/admin-dashboard/materials
+export const uploadMaterial = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: "No file attached" });
+    }
+
+    const { title, subject, class: cls, description } = req.body;
+    if (!title || !cls) {
+      return res.status(400).json({ success: false, message: "Title and class are required" });
+    }
+
+    const result = await uploadToCloudinary(
+      req.file.buffer,
+      req.file.mimetype,
+      req.file.originalname,
+    );
+
+    const material = await Material.create({
+      title,
+      subject:        subject ?? "",
+      class:          cls,
+      description:    description ?? "",
+      uploadedBy:     req.user.id,          // admin's user _id
+      fileName:       req.file.originalname,
+      storedFileName: result.public_id,
+      fileType:       req.file.mimetype,
+      fileSize:       req.file.size,
+      fileUrl:        result.secure_url,
+    });
+
+    res.status(201).json({ success: true, data: material });
+  } catch (err) {
+    console.error("admin uploadMaterial:", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// DELETE /api/admin-dashboard/materials/:id
+export const deleteMaterial = async (req, res) => {
+  try {
+    const material = await Material.findById(req.params.id);
+    if (!material) {
+      return res.status(404).json({ success: false, message: "Material not found" });
+    }
+
+    if (material.storedFileName) {
+      await cloudinary.uploader.destroy(material.storedFileName).catch(() => {});
+    }
+
+    await material.deleteOne();
+    res.json({ success: true, message: "Material deleted" });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
