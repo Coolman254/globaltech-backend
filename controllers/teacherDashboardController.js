@@ -56,26 +56,27 @@ export const getDashboard = async (req, res) => {
         .sort({ createdAt: -1 }).limit(10).lean(),
     ]);
 
+    // FIX 1: was referencing undefined `upcomingTasks` — use `assignments` instead
+    // FIX 2: response is flat (no nested `data:{}`) so frontend's r.data maps directly
+    // FIX 3: stat keys match what the frontend reads (totalStudents, totalClasses, totalAssignments)
     res.json({
       success: true,
-      data: {
-        teacher: {
-          _id:       teacher._id,
-          firstName: teacher.firstName,
-          lastName:  teacher.lastName,
-          fullName:  teacher.fullName ?? `${teacher.firstName} ${teacher.lastName}`,
-          email:     teacher.email,
-          classes,
-          subjects:  teacher.subject ? [teacher.subject] : (teacher.subjects ?? []),
-        },
-        stats: {
-          studentCount:    students.length,
-          assignmentCount: assignments.length,
-          classCount:      classes.length,
-        },
-        assignments,
-        announcements,
+      teacher: {
+        _id:            teacher._id,
+        firstName:      teacher.firstName,
+        lastName:       teacher.lastName,
+        fullName:       teacher.fullName ?? `${teacher.firstName} ${teacher.lastName}`,
+        email:          teacher.email,
+        subject:        teacher.subject ?? "",
+        classesAssigned: classes,
       },
+      stats: {
+        totalStudents:    students.length,
+        totalClasses:     classes.length,
+        totalAssignments: assignments.length,
+      },
+      upcomingTasks: assignments,   // frontend reads data?.upcomingTasks
+      announcements,
     });
   } catch (err) {
     console.error("teacher getDashboard:", err);
@@ -284,7 +285,6 @@ export const uploadMaterial = async (req, res) => {
       return res.status(400).json({ success: false, message: "Title and class are required" });
     }
 
-    // Upload buffer directly to Cloudinary
     const result = await uploadToCloudinary(
       req.file.buffer,
       req.file.mimetype,
@@ -297,11 +297,11 @@ export const uploadMaterial = async (req, res) => {
       class:          cls,
       description:    description ?? "",
       uploadedBy:     teacher._id,
-      fileName:       req.file.originalname,  // shown in UI
-      storedFileName: result.public_id,        // Cloudinary public_id for deletion
+      fileName:       req.file.originalname,
+      storedFileName: result.public_id,
       fileType:       req.file.mimetype,
       fileSize:       req.file.size,
-      fileUrl:        result.secure_url,       // permanent Cloudinary URL
+      fileUrl:        result.secure_url,
     });
 
     res.status(201).json({ success: true, data: material });
