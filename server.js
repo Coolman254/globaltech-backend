@@ -17,7 +17,7 @@ import adminDashboardRoutes from "./routes/adminDashboardRoutes.js";
 import teacherDashboardRoutes from "./routes/teacherDashboardRoutes.js";
 import parentDashboardRoutes from "./routes/parentDashboardRoutes.js";
 import studentFinanceRoutes from "./routes/studentFinanceRoutes.js";
-
+import contactRoutes from "./routes/contactRoutes.js";
 // ── Only load .env locally, Render injects env vars directly ─────────────────
 if (process.env.NODE_ENV !== "production") {
   dotenv.config();
@@ -72,6 +72,7 @@ app.use("/api/admin-dashboard",    adminDashboardRoutes);
 app.use("/api/teacher-dashboard",  teacherDashboardRoutes);
 app.use("/api/parent-dashboard",   parentDashboardRoutes);
 app.use("/api/student-finance",    studentFinanceRoutes);
+app.use("/api/contacts",           contactRoutes);
 
 // ── Database + server start ───────────────────────────────────────────────────
 mongoose
