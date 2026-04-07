@@ -7,19 +7,19 @@ const materialSchema = new mongoose.Schema(
     class:       { type: String, required: true, trim: true },
     description: { type: String, default: "" },
 
-    uploadedBy:  { type: mongoose.Schema.Types.ObjectId, ref: "Teacher", required: true },
+    // ref changed to "User" so both teachers and admins can upload
+    uploadedBy:  { type: mongoose.Schema.Types.ObjectId, ref: "User" },
 
     // Original filename shown in the UI (e.g. "Chapter 3 Notes.pdf")
     fileName:       { type: String, required: true },
 
-    // FIX: unique filename stored on disk (e.g. "1714000000000-837261234.pdf")
-    // downloadMaterial reads this field to build the file path — it MUST be saved on upload
+    // Cloudinary public_id — used for deletion
     storedFileName: { type: String, required: true },
 
     fileType: { type: String, default: "" },
     fileSize: { type: Number, default: 0 },
 
-    // Convenience URL for direct static access (optional — download route is preferred)
+    // Permanent Cloudinary URL — used for download
     fileUrl: { type: String, default: "" },
   },
   { timestamps: true }
