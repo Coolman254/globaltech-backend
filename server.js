@@ -72,7 +72,7 @@ app.use("/api/admin-dashboard",    adminDashboardRoutes);
 app.use("/api/teacher-dashboard",  teacherDashboardRoutes);
 app.use("/api/parent-dashboard",   parentDashboardRoutes);
 app.use("/api/student-finance",    studentFinanceRoutes);
-app.use("/api/contacts",           contactRoutes);
+app.use("/api/contact",           contactRoutes);
 
 // ── Database + server start ───────────────────────────────────────────────────
 mongoose
